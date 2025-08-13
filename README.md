@@ -16,7 +16,7 @@ These projects are **for learning and experimentation only** — they are not pr
 .
 ├── 20250812_hybrid_battery_twin_digital_with_LLM.py   # Template for Li-ion battery hybrid digital twin
 ├── 20250812_reachy_digital_with_LLM.py                # Template for Reachy humanoid digital twin
-├── .env.example                                       # Example environment variables for LLM API key
+├── env                                                # Example environment variables for LLM API key
 └── README.txt                                         # This file
 ```
 

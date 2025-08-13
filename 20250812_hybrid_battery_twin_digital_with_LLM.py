@@ -68,59 +68,74 @@ Never output explanations. Only valid JSON.
 
 
 class BatteryLLM:
-    def __init__(self):
-        # Enable if API key is present and openai SDK is available
-        self.enabled = bool(api_key) and (OpenAI is not None)
-        self.client = OpenAI(api_key=api_key) if self.enabled else None
+    def __init__(self, model="gpt-4o-mini"):
+        self.model = model
+        self.client = OpenAI(api_key=api_key)
 
-    def parse(self, text):
-        text = (text or "").strip()
-        if not text:
+    def parse(self, text: str):
+        t = (text or "").strip()
+        if not t:
             return []
 
-        if self.enabled:
+        # Try LLM first
+        if self.client:
             try:
                 resp = self.client.chat.completions.create(
-                    model="gpt-4o-mini",
+                    model=self.model,
                     temperature=0.2,
                     messages=[
                         {"role": "system", "content": SYSTEM_PROMPT},
-                        {"role": "user", "content": text},
+                        {"role": "user", "content": t},
                     ],
                     response_format={"type": "json_object"},
                 )
-                content = resp.choices[0].message.content
-                parsed = json.loads(content)
-
-                # Ensure parsed is always a list of actions
-                if isinstance(parsed, dict):
-                    return [parsed]
-                return parsed
+                data = json.loads(resp.choices[0].message.content)
+                return data if isinstance(data, list) else [data]
             except Exception as e:
-                print("[LLM] Error, falling back:", e)
+                print("[LLM] Falling back to simple parser:", e)
 
-        # If LLM is disabled or failed, use fallback parser
-        return self._fallback(text)
+        # Fallback if LLM disabled or failed
+        return self._fallback(t)
 
-    def _fallback(self, text):
-        # very simple pattern match fallback
-        t = text.lower()
+    @staticmethod
+    def _fallback(t: str):
+        """Very small rule-based parser so the app still works offline."""
+        s = t.lower()
         actions = []
-        if "set" in t and "temp" in t:
-            try:
-                temp = float(t.split("temp")[1].split()[0])
-                actions.append(
-                    {
-                        "type": "set_params",
-                        "args": {"temp_c": temp, "cycles": 0, "charge_time_h": 1.0},
-                    }
-                )
-            except:
-                pass
-        if "predict" in t:
-            actions.append({"type": "predict_capacity", "args": {}})
-        return actions
 
+        def num_after(word, default=None, cast=float):
+            try:
+                chunk = s.split(word, 1)[1].split()[0]
+                return cast(chunk)
+            except Exception:
+                return default
+
+        # set params: temp / cycles / charge time (any subset accepted)
+        if "set" in s and ("temp" in s or "cycles" in s or "charge" in s):
+            actions.append({
+                "type": "set_params",
+                "args": {
+                    "temp_c":       num_after("temp",   25.0, float),
+                    "cycles":       num_after("cycles", 0,    int),
+                    "charge_time_h":num_after("charge", 1.0,  float),
+                }
+            })
+
+        # set initial capacity
+        if "initial" in s and "capacity" in s:
+            c0 = num_after("capacity", None, float)
+            if c0 is not None:
+                actions.append({"type": "set_initial_capacity", "args": {"c0": c0}})
+
+        # show current config
+        if "show" in s and "config" in s:
+            actions.append({"type": "show_config", "args": {}})
+
+        # predict capacity
+        if "predict" in s:
+            actions.append({"type": "predict_capacity", "args": {}})
+
+        return actions
 # -------------------------
 # Main interactive loop
 # -------------------------
